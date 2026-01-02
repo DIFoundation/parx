@@ -1,11 +1,11 @@
-import { useWriteContract, usePublicClient, useConnection } from 'wagmi';
+import { useWriteContract, usePublicClient, useConnection, useSendTransaction } from 'wagmi';
 import { encodeDeployData, type Address } from 'viem';
 import { useState } from 'react';
 
 export const useDeployer = () => {
   const { address } = useConnection();
   const publicClient = usePublicClient();
-  const { writeContractAsync } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
   
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployedAddress, setDeployedAddress] = useState<Address | null>(null);
@@ -23,15 +23,24 @@ export const useDeployer = () => {
         args: args,
       });
 
-      // 2. Send Transaction
-      // Note: In Viem/Wagmi, deploying is a 'sendTransaction' with data but no 'to' address.
-      // However, AppKit/Wagmi v2 often prefers using 'sendTransaction' directly for deployments.
-      const hash = await publicClient.sendTransaction({
-        account: address,
+      // 2. Get gas estimate
+      const gasEstimate = await publicClient.estimateGas({
         data: deployData,
+        account: address,
       });
 
-      // 3. Wait for Receipt
+      // 3. Get current gas price
+      const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
+
+      // 4. Send the transaction using sendTransaction which handles EIP-1559
+      const hash = await sendTransactionAsync({
+        data: deployData,
+        gas: gasEstimate,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+      });
+
+      // 5. Wait for transaction receipt
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       
       if (receipt.contractAddress) {

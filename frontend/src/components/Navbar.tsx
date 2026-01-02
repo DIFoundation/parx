@@ -1,11 +1,16 @@
 'use client'
 import React from 'react'
 import { useAppKit } from '@reown/appkit/react';
-import { useConnection } from 'wagmi';
+import { useBalance, useConnection } from 'wagmi';
+import { formatUnits } from 'viem';
 
 function ConnectWallet() {
     const { open } = useAppKit();
-    const { isConnected } = useConnection();
+    const { isConnected, address } = useConnection();
+    const balance = useBalance({ address });
+
+    const bal = balance.data?.value as bigint;
+    const dec = balance.data?.decimals as number;
     return (
         <button
             className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
@@ -17,15 +22,15 @@ function ConnectWallet() {
                 }
             }}
         >
-            Connect Wallet
+            {isConnected ? `${address?.slice(0, 6)}...${address?.slice(-4)} ${formatUnits(bal, dec)} ${balance.data?.symbol}` : 'Connect Wallet'}
         </button>
     )
 }
 
 export default function Navbar() {
-    const { isConnected, chain } = useConnection();
+    const { isConnected, chain } = useConnection();    
     return (
-        <header className="flex items-center justify-between p-4">
+        <header className="flex items-center justify-between align-middle p-4">
             <div>
                 <h1 className="text-4xl font-bold tracking-tighter text-white">
                     PARX<span className="text-blue-500">.</span>
