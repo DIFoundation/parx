@@ -1,21 +1,32 @@
-import { useWriteContract, usePublicClient, useConnection, useSendTransaction } from 'wagmi';
-import { encodeDeployData, type Address } from 'viem';
-import { useState } from 'react';
+'use client'
+import {
+  usePublicClient,
+  useConnection,
+  useWalletClient,
+} from "wagmi";
+import { encodeDeployData, type Address } from "viem";
+import { useState } from "react";
 
 export const useDeployer = () => {
   const { address } = useConnection();
   const publicClient = usePublicClient();
-  const { sendTransactionAsync } = useSendTransaction();
-  
+  const { data: walletClient } = useWalletClient();
+
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployedAddress, setDeployedAddress] = useState<Address | null>(null);
+  const [deploymentError, setDeploymentError] = useState<string | null>(null);
 
   const deploy = async (artifact: any, args: any[]) => {
-    if (!address || !publicClient) return alert("Please connect your wallet first");
+    if (!address || !publicClient || !walletClient) {
+      const error = "Please connect your wallet first";
+      setDeploymentError(error);
+      throw new Error(error);
+    }
+
+    setIsDeploying(true);
+    setDeploymentError(null);
 
     try {
-      setIsDeploying(true);
-
       // 1. Prepare the Deployment Data (Bytecode + Encoded Args)
       const deployData = encodeDeployData({
         abi: artifact.abi,
@@ -32,8 +43,8 @@ export const useDeployer = () => {
       // 3. Get current gas price
       const { maxFeePerGas, maxPriorityFeePerGas } = await publicClient.estimateFeesPerGas();
 
-      // 4. Send the transaction using sendTransaction which handles EIP-1559
-      const hash = await sendTransactionAsync({
+      // 4. Send the transaction using walletClient
+      const hash = await walletClient.sendTransaction({
         data: deployData,
         gas: gasEstimate,
         maxFeePerGas,
@@ -43,17 +54,36 @@ export const useDeployer = () => {
       // 5. Wait for transaction receipt
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       
-      if (receipt.contractAddress) {
-        setDeployedAddress(receipt.contractAddress);
-        return receipt.contractAddress;
+      if (!receipt.contractAddress) {
+        throw new Error("No contract address in receipt");
       }
-    } catch (error) {
+
+      setDeployedAddress(receipt.contractAddress);
+      
+      console.log('Deployed Contract', deployedAddress);
+
+      return {
+        address: receipt.contractAddress,
+        hash,
+        receipt
+      };
+
+    } catch (error: any) {
       console.error("Deployment failed:", error);
+      const errorMessage = error?.message || "Failed to deploy contract";
+      setDeploymentError(errorMessage);
       throw error;
     } finally {
       setIsDeploying(false);
     }
   };
 
-  return { deploy, isDeploying, deployedAddress };
+  return { 
+    deploy, 
+    isDeploying, 
+    deployedAddress, 
+    address, 
+    walletClient,
+    error: deploymentError 
+  };
 };
