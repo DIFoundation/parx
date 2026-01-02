@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from 'react';
+import { useConnection } from 'wagmi';
 import ArtifactUploader from '@/components/ArtifactUploader';
 import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
+import { useDeployer } from '@/hooks/useDeployer';
 
-function Option({ 
-  activeTab, 
-  onTabChange 
-}: { 
+function Option({
+  activeTab,
+  onTabChange
+}: {
   activeTab: 'deploy' | 'verify' | 'explorer',
-  onTabChange: (tab: 'deploy' | 'verify' | 'explorer') => void 
+  onTabChange: (tab: 'deploy' | 'verify' | 'explorer') => void
 }) {
   return (
     <header className="max-w-6xl mx-auto mb-12 flex justify-between items-end">
@@ -33,16 +35,32 @@ function Option({
 }
 
 export default function ParxHome() {
+  const { chain } = useConnection();
   const [selectedContract, setSelectedContract] = useState<SmartContractArtifact | null>(null);
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
   const [constructorArgs, setConstructorArgs] = useState<any[]>([]);
 
+  const { deploy, isDeploying } = useDeployer();
+  const [logs, setLogs] = useState<string[]>([]);
+
+  const handleDeploy = async () => {
+    setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.contractName}...`]);
+
+    try {
+      const address = await deploy(selectedContract, constructorArgs);
+      setLogs(prev => [...prev, `Success! Contract deployed at: ${address}`]);
+      setLogs(prev => [...prev, `Check your wallet or block explorer for confirmation.`]);
+    } catch (err: any) {
+      setLogs(prev => [...prev, `Error: ${err.message || "User rejected request"}`]);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
       {/* Header */}
-      <Option 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab} 
+      <Option
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
 
       <section className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
@@ -90,9 +108,9 @@ export default function ParxHome() {
 
                   <button
                     className="w-full mt-8 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all"
-                    onClick={() => {/* We will add the Viem deployment logic here next! */ }}
+                    onClick={() => handleDeploy()}
                   >
-                    Deploy to Network
+                    Deploy to {chain?.name} Network
                   </button>
                 </div>
               </div>
