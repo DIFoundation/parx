@@ -5,6 +5,33 @@ import ArtifactUploader from '@/components/ArtifactUploader';
 import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
 
+function Option({ 
+  activeTab, 
+  onTabChange 
+}: { 
+  activeTab: 'deploy' | 'verify' | 'explorer',
+  onTabChange: (tab: 'deploy' | 'verify' | 'explorer') => void 
+}) {
+  return (
+    <header className="max-w-6xl mx-auto mb-12 flex justify-between items-end">
+      <nav className="flex gap-6 border-b border-gray-800">
+        {['deploy', 'verify', 'explorer'].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => onTabChange(tab as any)}
+            className={`pb-2 px-1 capitalize transition-all ${activeTab === tab
+              ? 'border-b-2 border-blue-500 text-blue-500'
+              : 'text-gray-500 hover:text-gray-300'
+              }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </nav>
+    </header>
+  );
+}
+
 export default function ParxHome() {
   const [selectedContract, setSelectedContract] = useState<SmartContractArtifact | null>(null);
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
@@ -13,29 +40,10 @@ export default function ParxHome() {
   return (
     <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
       {/* Header */}
-      <header className="max-w-6xl mx-auto mb-12 flex justify-between items-end">
-        <div>
-          <h1 className="text-4xl font-bold tracking-tighter text-white">
-            PARX<span className="text-blue-500">.</span>
-          </h1>
-          <p className="text-gray-400 mt-2">Parameterized Action Runner for EVM</p>
-        </div>
-
-        <nav className="flex gap-6 border-b border-gray-800">
-          {['deploy', 'verify', 'explorer'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab as any)}
-              className={`pb-2 px-1 capitalize transition-all ${activeTab === tab
-                ? 'border-b-2 border-blue-500 text-blue-500'
-                : 'text-gray-500 hover:text-gray-300'
-                }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-      </header>
+      <Option 
+        activeTab={activeTab} 
+        onTabChange={setActiveTab} 
+      />
 
       <section className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
         {/* Left Column: Upload & Selection */}
