@@ -60,7 +60,8 @@ export const useDeployer = () => {
 
       setDeployedAddress(receipt.contractAddress);
       
-      console.log('Deployed Contract', deployedAddress);
+      console.log('Deployed Contract Address:', receipt.contractAddress);
+      console.log('Transaction Hash:', hash);
 
       return {
         address: receipt.contractAddress,

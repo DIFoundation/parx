@@ -6,6 +6,15 @@ import ArtifactUploader from '@/components/ArtifactUploader';
 import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
 import { useDeployer } from '@/hooks/useDeployer';
+import TerminalLog from '@/components/TerminalLog';
+
+interface PlanItem {
+  id: string;
+  artifact: SmartContractArtifact;
+  args: any[]; // These might contain placeholders like "{{ContractA}}"
+  status: 'idle' | 'deploying' | 'success' | 'error';
+  deployedAddress?: string;
+}
 
 function Option({
   activeTab,
@@ -43,17 +52,72 @@ export default function ParxHome() {
   const { deploy, isDeploying } = useDeployer();
   const [logs, setLogs] = useState<string[]>([]);
 
+  const [deployedInfo, setDeployedInfo] = useState<{ address: string, hash: string } | null>(null);
+  const [sessionAddresses, setSessionAddresses] = useState<Record<string, string>>({});
+
   const handleDeploy = async () => {
     setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.contractName}...`]);
 
     try {
       const address = await deploy(selectedContract, constructorArgs);
-      setLogs(prev => [...prev, `Success! Contract deployed at: ${address}`]);
-      setLogs(prev => [...prev, `Check your wallet or block explorer for confirmation.`]);
+      setLogs(prev => [...prev, `Success! Contract deployed at: ${address.address}`]);
+      setLogs(prev => [...prev, `Check your wallet or block explorer for confirmation. at ${address.hash}`]);
+      if (address.address) {
+        setDeployedInfo({ address: address.address, hash: address.hash });
+      }
     } catch (err: any) {
       setLogs(prev => [...prev, `Error: ${err.message || "User rejected request"}`]);
+      console.log(err);
     }
   };
+
+
+  const resolveArgs = (args: any[]) => {
+    return args.map(arg => {
+      // If the argument is a string like "{{MyToken}}", look up its address
+      if (typeof arg === 'string' && arg.startsWith('{{') && arg.endsWith('}}')) {
+        const contractName = arg.replace('{{', '').replace('}}', '');
+        return sessionAddresses[contractName] || arg; // Fallback to original if not found
+      }
+      return arg;
+    });
+  };
+
+  const runPipeline = async (orderedContracts: any[]) => {
+    let currentAddresses = { ...sessionAddresses };
+
+    for (const contract of orderedContracts) {
+      setLogs(prev => [...prev, `Resolving dependencies for ${contract.name}...`]);
+
+      // 1. Resolve Placeholders
+      const finalArgs = resolveArgs(contract.args);
+
+      // 2. Deploy
+      try {
+        const result = await deploy(contract.artifact, finalArgs);
+
+        // 3. Save to Session for next contracts
+        currentAddresses[contract.name] = result.address;
+        setSessionAddresses(currentAddresses);
+
+        setLogs(prev => [...prev, `Deployed ${contract.name} at ${result.address}`]);
+      } catch (e) {
+        setLogs(prev => [...prev, `Pipeline stopped: ${contract.name} failed.`]);
+        break;
+      }
+    }
+  };
+
+  const explorerLink = [
+    {
+      name: "Base",
+      url: "https://base.blockscout.com/tx/"
+    },
+    {
+      name: "Celo",
+      url: "https://celo.blockscout.com/tx/"
+    }
+  ]
 
   return (
     <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
@@ -116,8 +180,59 @@ export default function ParxHome() {
               </div>
             )}
           </div>
+
+          {deployedInfo && (
+            <div className="mt-6 p-6 bg-green-500/10 border border-green-500/50 rounded-xl animate-in fade-in zoom-in duration-300">
+              <h3 className="text-green-400 font-bold flex items-center gap-2">
+                <span>✅</span> Deployment Successful!
+              </h3>
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Contract Address</p>
+                  <div className="flex items-center gap-2">
+                    <code className="bg-black p-2 rounded block w-full text-sm border border-gray-800">
+                      {deployedInfo.address}
+                    </code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(deployedInfo.address)}
+                      className="p-2 hover:bg-gray-800 rounded transition-colors"
+                      title="Copy Address"
+                    >
+                      📋
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Transaction Hash</p>
+                  {explorerLink.map((link: { name: string, url: string }) => (
+                    <a
+                      key={link.name}
+                      href={`${link.url}${deployedInfo.hash}`}
+                      target="_blank"
+                      className="text-xs text-blue-400 hover:underline font-mono"
+                    >
+                      {link.name} Explorer
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              {/* Verification Link */}
+              <button
+                onClick={() => setActiveTab('verify')}
+                className="mt-4 w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-bold transition-all"
+              >
+                Verify This Contract Now
+              </button>
+            </div>
+          )}
         </div>
       </section>
+
+      <TerminalLog logs={logs} />
+
     </main>
   );
 }

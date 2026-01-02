@@ -28,33 +28,24 @@ export default function ArtifactUploader({ onContractSelect }: Props) {
                 <span className="text-xs text-gray-500">(Supports Foundry /out and Hardhat /artifacts)</span>
             </div>
 
-            {/* {artifacts.length > 0 && (
-                <div className="mt-6 text-left">
-                    <h3 className="text-sm font-semibold text-blue-400 mb-2">Detected Contracts:</h3>
+            {artifacts.length > 0 && (
+                <div className="mt-4 space-y-2 max-h-100 overflow-y-auto">
+                    <h3 className="text-sm font-semibold text-blue-400 mb-2">Select Contract:</h3>
                     <ul className="space-y-1">
                         {artifacts.map((art, i) => (
-                            <li key={i} className="text-xs bg-gray-800 p-2 rounded border border-gray-700 flex justify-between">
+                            <li
+                                key={i}
+                                onClick={(e) => {
+                                    e.stopPropagation(); // Prevent re-triggering dropzone
+                                    onContractSelect(art);
+                                }}
+                                className="text-xs bg-gray-800 p-2 rounded border border-gray-700 flex justify-between"
+                            >
                                 <span>{art.contractName}</span>
                                 <span className="text-gray-500 uppercase">{art.framework}</span>
                             </li>
                         ))}
                     </ul>
-                </div>
-            )} */}
-            {artifacts.length > 0 && (
-                <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
-                    {artifacts.map((art, i) => (
-                        <button
-                            key={i}
-                            onClick={(e) => {
-                                e.stopPropagation(); // Prevent re-triggering dropzone
-                                onContractSelect(art);
-                            }}
-                            className="w-full text-left p-3 rounded-lg bg-gray-800 hover:bg-gray-700 border border-transparent hover:border-blue-500 transition-all text-sm"
-                        >
-                            {art.contractName}
-                        </button>
-                    ))}
                 </div>
             )}
         </div>
