@@ -6,6 +6,8 @@ import ArtifactUploader from '@/components/ArtifactUploader';
 import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
 import { useDeployer } from '@/hooks/useDeployer';
+import TerminalLog from '@/components/TerminalLog';
+import Link from 'next/link';
 
 function Option({
   activeTab,
@@ -35,25 +37,81 @@ function Option({
 }
 
 export default function ParxHome() {
-  const { chain } = useConnection();
-  const [selectedContract, setSelectedContract] = useState<SmartContractArtifact | null>(null);
+  const { chain, chainId } = useConnection();
+  const [selectedContract, setSelectedContract] = useState<SmartContractArtifact[] | null>(null);
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
   const [constructorArgs, setConstructorArgs] = useState<any[]>([]);
 
   const { deploy, isDeploying } = useDeployer();
   const [logs, setLogs] = useState<string[]>([]);
 
+  const [deployedInfo, setDeployedInfo] = useState<{ address: string, hash: string } | null>(null);
+  const [sessionAddresses, setSessionAddresses] = useState<Record<string, string>>({});
+
   const handleDeploy = async () => {
-    setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.contractName}...`]);
+    setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.map((contract) => contract.contractName).join(', ')}...`]);
 
     try {
       const address = await deploy(selectedContract, constructorArgs);
-      setLogs(prev => [...prev, `Success! Contract deployed at: ${address}`]);
-      setLogs(prev => [...prev, `Check your wallet or block explorer for confirmation.`]);
+      setLogs(prev => [...prev, `Success! Contract deployed at: ${address.address}`]);
+      setLogs(prev => [...prev, `Check your wallet or block explorer for confirmation. at ${address.hash}`]);
+      if (address.address) {
+        setDeployedInfo({ address: address.address, hash: address.hash });
+      }
     } catch (err: any) {
       setLogs(prev => [...prev, `Error: ${err.message || "User rejected request"}`]);
+      console.log(err);
     }
   };
+
+
+  const resolveArgs = (args: any[]) => {
+    return args.map(arg => {
+      // If the argument is a string like "{{MyToken}}", look up its address
+      if (typeof arg === 'string' && arg.startsWith('{{') && arg.endsWith('}}')) {
+        const contractName = arg.replace('{{', '').replace('}}', '');
+        return sessionAddresses[contractName] || arg; // Fallback to original if not found
+      }
+      return arg;
+    });
+  };
+
+  const runPipeline = async (orderedContracts: any[]) => {
+    const currentAddresses = { ...sessionAddresses };
+
+    for (const contract of orderedContracts) {
+      setLogs(prev => [...prev, `Resolving dependencies for ${contract.contractName}...`]);
+
+      // 1. Resolve Placeholders
+      const finalArgs = resolveArgs(contract.args);
+
+      // 2. Deploy
+      try {
+        const result = await deploy(contract.artifact, finalArgs);
+
+        // 3. Save to Session for next contracts
+        currentAddresses[contract.contractName] = result.address;
+        setSessionAddresses(currentAddresses);
+
+        setLogs(prev => [...prev, `Deployed ${contract.contractName} at ${result.address}`]);
+      } catch (e: any) {
+        setLogs(prev => [...prev, `Pipeline stopped: ${contract.contractName} failed.`]);
+        setLogs(prev => [...prev, `Error: ${e.message || "User rejected request"}`])
+        break;
+      }
+    }
+  };
+
+  const explorerLink = {
+    base: {
+      name: "Base",
+      url: "https://base.blockscout.com/tx/"
+    },
+    celo: {
+      name: "Celo",
+      url: "https://celo.blockscout.com/tx/"
+    }
+  }
 
   return (
     <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
@@ -67,17 +125,23 @@ export default function ParxHome() {
         {/* Left Column: Upload & Selection */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-4">
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-4 flex items-center justify-between">
               1. Load Project
+              <span 
+                className="text-xs text-gray-500 cursor-pointer" 
+                onClick={() => {
+                  setSelectedContract(null);
+                }}
+              >refresh</span>
             </h2>
-            <ArtifactUploader onContractSelect={setSelectedContract} />
+            <ArtifactUploader onContractSelect={setSelectedContract} onRefresh={() => setSelectedContract(null)} />
           </div>
 
           {selectedContract && (
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
               <p className="text-xs text-blue-400 font-medium">Selected Contract</p>
-              <p className="text-lg font-mono text-white">{selectedContract.contractName}</p>
-              <p className="text-xs text-gray-500 mt-1 uppercase">Framework: {selectedContract.framework}</p>
+              <p className="text-lg font-mono text-white">{selectedContract.map((contract) => contract.contractName).join(', ')}</p>
+              <p className="text-xs text-gray-500 mt-1 uppercase">Framework: {selectedContract.map((contract) => contract.framework).join(', ')}</p>
             </div>
           )}
         </div>
@@ -99,7 +163,7 @@ export default function ParxHome() {
                 <h2 className="text-2xl font-bold mb-6">Configure Action: {activeTab}</h2>
                 {/* This is where our Constructor Form will go */}
                 <div className="space-y-4">
-                  <h2 className="text-2xl font-bold mb-6">Deploy: {selectedContract.contractName}</h2>
+                  <h2 className="text-2xl font-bold mb-6">Deploy: {selectedContract.map((contract) => contract.contractName).join(', ')}</h2>
 
                   <ConstructorForm
                     artifact={selectedContract}
@@ -116,8 +180,57 @@ export default function ParxHome() {
               </div>
             )}
           </div>
+
+          {deployedInfo && (
+            <div className="mt-6 p-6 bg-green-500/10 border border-green-500/50 rounded-xl animate-in fade-in zoom-in duration-300">
+              <h3 className="text-green-400 font-bold flex items-center gap-2">
+                <span>✅</span> Deployment Successful!
+              </h3>
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Contract Address</p>
+                  <div className="flex items-center gap-2">
+                    <code className="bg-black p-2 rounded block w-full text-sm border border-gray-800">
+                      {deployedInfo.address}
+                    </code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(deployedInfo.address)}
+                      className="p-2 hover:bg-gray-800 rounded transition-colors"
+                      title="Copy Address"
+                    >
+                      📋
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Transaction Hash</p>
+                    <Link
+                      key={chain?.name == 'Base' ? explorerLink.base.name : explorerLink.celo.name}
+                      href={`${chain?.name == 'Base' ? explorerLink.base.url : explorerLink.celo.url}${deployedInfo.hash}`}
+                      target="_blank"
+                      className="text-xs text-blue-400 hover:underline font-mono"
+                    >
+                      {chain?.name == 'Base' ? explorerLink.base.name : explorerLink.celo.name} Explorer
+                    </Link>
+                </div>
+              </div>
+
+              {/* Verification Link */}
+              <button
+                onClick={() => setActiveTab('verify')}
+                className="mt-4 w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-bold transition-all"
+              >
+                Verify This Contract Now
+              </button>
+            </div>
+          )}
         </div>
       </section>
+
+      <TerminalLog logs={logs} />
+
     </main>
   );
 }
