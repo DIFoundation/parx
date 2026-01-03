@@ -11,7 +11,8 @@ function ConnectWallet() {
 
     const displayBalance = React.useMemo(() => {
         if (!balance?.value || !balance?.decimals) return '0';
-        return formatUnits(balance.value, balance.decimals);
+        const bal = formatUnits(balance.value, balance.decimals);
+        return Number(bal).toFixed(4);
     }, [balance]);
 
     return (
@@ -32,6 +33,12 @@ function ConnectWallet() {
     )
 }
 
+function CurrentNetwork() {
+    return (
+        <appkit-network-button />
+    )
+}
+
 export default function Navbar() {
     const { isConnected, chain } = useConnection();    
     return (
@@ -45,6 +52,7 @@ export default function Navbar() {
 
             <div className="flex items-center gap-4">
                 <ConnectWallet />
+                <CurrentNetwork />
                 {isConnected && (
                     <div className="text-xs bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
                         Network: <span className="text-blue-400 font-mono">{chain?.name}</span>

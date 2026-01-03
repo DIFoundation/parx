@@ -7,14 +7,7 @@ import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
 import { useDeployer } from '@/hooks/useDeployer';
 import TerminalLog from '@/components/TerminalLog';
-
-interface PlanItem {
-  id: string;
-  artifact: SmartContractArtifact;
-  args: any[]; // These might contain placeholders like "{{ContractA}}"
-  status: 'idle' | 'deploying' | 'success' | 'error';
-  deployedAddress?: string;
-}
+import Link from 'next/link';
 
 function Option({
   activeTab,
@@ -44,8 +37,8 @@ function Option({
 }
 
 export default function ParxHome() {
-  const { chain } = useConnection();
-  const [selectedContract, setSelectedContract] = useState<SmartContractArtifact | null>(null);
+  const { chain, chainId } = useConnection();
+  const [selectedContract, setSelectedContract] = useState<SmartContractArtifact[] | null>(null);
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
   const [constructorArgs, setConstructorArgs] = useState<any[]>([]);
 
@@ -56,7 +49,7 @@ export default function ParxHome() {
   const [sessionAddresses, setSessionAddresses] = useState<Record<string, string>>({});
 
   const handleDeploy = async () => {
-    setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.contractName}...`]);
+    setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.map((contract) => contract.contractName).join(', ')}...`]);
 
     try {
       const address = await deploy(selectedContract, constructorArgs);
@@ -84,10 +77,10 @@ export default function ParxHome() {
   };
 
   const runPipeline = async (orderedContracts: any[]) => {
-    let currentAddresses = { ...sessionAddresses };
+    const currentAddresses = { ...sessionAddresses };
 
     for (const contract of orderedContracts) {
-      setLogs(prev => [...prev, `Resolving dependencies for ${contract.name}...`]);
+      setLogs(prev => [...prev, `Resolving dependencies for ${contract.contractName}...`]);
 
       // 1. Resolve Placeholders
       const finalArgs = resolveArgs(contract.args);
@@ -97,27 +90,28 @@ export default function ParxHome() {
         const result = await deploy(contract.artifact, finalArgs);
 
         // 3. Save to Session for next contracts
-        currentAddresses[contract.name] = result.address;
+        currentAddresses[contract.contractName] = result.address;
         setSessionAddresses(currentAddresses);
 
-        setLogs(prev => [...prev, `Deployed ${contract.name} at ${result.address}`]);
-      } catch (e) {
-        setLogs(prev => [...prev, `Pipeline stopped: ${contract.name} failed.`]);
+        setLogs(prev => [...prev, `Deployed ${contract.contractName} at ${result.address}`]);
+      } catch (e: any) {
+        setLogs(prev => [...prev, `Pipeline stopped: ${contract.contractName} failed.`]);
+        setLogs(prev => [...prev, `Error: ${e.message || "User rejected request"}`])
         break;
       }
     }
   };
 
-  const explorerLink = [
-    {
+  const explorerLink = {
+    base: {
       name: "Base",
       url: "https://base.blockscout.com/tx/"
     },
-    {
+    celo: {
       name: "Celo",
       url: "https://celo.blockscout.com/tx/"
     }
-  ]
+  }
 
   return (
     <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
@@ -131,17 +125,23 @@ export default function ParxHome() {
         {/* Left Column: Upload & Selection */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-4">
+            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-4 flex items-center justify-between">
               1. Load Project
+              <span 
+                className="text-xs text-gray-500 cursor-pointer" 
+                onClick={() => {
+                  setSelectedContract(null);
+                }}
+              >refresh</span>
             </h2>
-            <ArtifactUploader onContractSelect={setSelectedContract} />
+            <ArtifactUploader onContractSelect={setSelectedContract} onRefresh={() => setSelectedContract(null)} />
           </div>
 
           {selectedContract && (
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
               <p className="text-xs text-blue-400 font-medium">Selected Contract</p>
-              <p className="text-lg font-mono text-white">{selectedContract.contractName}</p>
-              <p className="text-xs text-gray-500 mt-1 uppercase">Framework: {selectedContract.framework}</p>
+              <p className="text-lg font-mono text-white">{selectedContract.map((contract) => contract.contractName).join(', ')}</p>
+              <p className="text-xs text-gray-500 mt-1 uppercase">Framework: {selectedContract.map((contract) => contract.framework).join(', ')}</p>
             </div>
           )}
         </div>
@@ -163,7 +163,7 @@ export default function ParxHome() {
                 <h2 className="text-2xl font-bold mb-6">Configure Action: {activeTab}</h2>
                 {/* This is where our Constructor Form will go */}
                 <div className="space-y-4">
-                  <h2 className="text-2xl font-bold mb-6">Deploy: {selectedContract.contractName}</h2>
+                  <h2 className="text-2xl font-bold mb-6">Deploy: {selectedContract.map((contract) => contract.contractName).join(', ')}</h2>
 
                   <ConstructorForm
                     artifact={selectedContract}
@@ -206,16 +206,14 @@ export default function ParxHome() {
 
                 <div>
                   <p className="text-xs text-gray-500 uppercase font-semibold">Transaction Hash</p>
-                  {explorerLink.map((link: { name: string, url: string }) => (
-                    <a
-                      key={link.name}
-                      href={`${link.url}${deployedInfo.hash}`}
+                    <Link
+                      key={chain?.name == 'Base' ? explorerLink.base.name : explorerLink.celo.name}
+                      href={`${chain?.name == 'Base' ? explorerLink.base.url : explorerLink.celo.url}${deployedInfo.hash}`}
                       target="_blank"
                       className="text-xs text-blue-400 hover:underline font-mono"
                     >
-                      {link.name} Explorer
-                    </a>
-                  ))}
+                      {chain?.name == 'Base' ? explorerLink.base.name : explorerLink.celo.name} Explorer
+                    </Link>
                 </div>
               </div>
 

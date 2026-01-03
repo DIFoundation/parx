@@ -1,6 +1,5 @@
-// components/ConstructorForm.tsx
 'use client'
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { mapSolidityTypeToInput } from '@/utils/abi-mapper';
 
 export default function ConstructorForm({ artifact, onArgsChange }: { 
