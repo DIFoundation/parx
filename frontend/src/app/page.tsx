@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { useConnection } from 'wagmi';
+import { useState, useEffect } from 'react';
+import { useAccount } from 'wagmi'; // useConnection is usually for low-level, useAccount for UI
 import ArtifactUploader from '@/components/ArtifactUploader';
 import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
@@ -9,228 +9,152 @@ import { useDeployer } from '@/hooks/useDeployer';
 import TerminalLog from '@/components/TerminalLog';
 import Link from 'next/link';
 
-function Option({
-  activeTab,
-  onTabChange
-}: {
-  activeTab: 'deploy' | 'verify' | 'explorer',
-  onTabChange: (tab: 'deploy' | 'verify' | 'explorer') => void
-}) {
-  return (
-    <header className="max-w-6xl mx-auto mb-12 flex justify-between items-end">
-      <nav className="flex gap-6 border-b border-gray-800">
-        {['deploy', 'verify', 'explorer'].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => onTabChange(tab as any)}
-            className={`pb-2 px-1 capitalize transition-all ${activeTab === tab
-              ? 'border-b-2 border-blue-500 text-blue-500'
-              : 'text-gray-500 hover:text-gray-300'
-              }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </nav>
-    </header>
-  );
+// Define the structure for an item in our deployment queue
+interface PlanItem {
+  id: string;
+  artifact: SmartContractArtifact;
+  args: any[];
+  status: 'idle' | 'deploying' | 'success' | 'error';
+  address?: string;
 }
 
 export default function ParxHome() {
-  const { chain, chainId } = useConnection();
-  const [selectedContract, setSelectedContract] = useState<SmartContractArtifact[] | null>(null);
+  const { chain } = useAccount();
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
-  const [constructorArgs, setConstructorArgs] = useState<any[]>([]);
-
-  const { deploy, isDeploying } = useDeployer();
+  
+  // THE CORE CHANGE: A list of contracts to be deployed
+  const [deploymentPlan, setDeploymentPlan] = useState<PlanItem[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const { deploy, isDeploying } = useDeployer();
 
-  const [deployedInfo, setDeployedInfo] = useState<{ address: string, hash: string } | null>(null);
-  const [sessionAddresses, setSessionAddresses] = useState<Record<string, string>>({});
-
-  const handleDeploy = async () => {
-    setLogs(prev => [...prev, `Starting deployment of ${selectedContract?.map((contract) => contract.contractName).join(', ')}...`]);
-
-    try {
-      const address = await deploy(selectedContract, constructorArgs);
-      setLogs(prev => [...prev, `Success! Contract deployed at: ${address.address}`]);
-      setLogs(prev => [...prev, `Check your wallet or block explorer for confirmation. at ${address.hash}`]);
-      if (address.address) {
-        setDeployedInfo({ address: address.address, hash: address.hash });
-      }
-    } catch (err: any) {
-      setLogs(prev => [...prev, `Error: ${err.message || "User rejected request"}`]);
-      console.log(err);
-    }
+  // Helper to add contracts to the queue from the uploader
+  const handleAddContracts = (artifacts: SmartContractArtifact[]) => {
+    const newItems: PlanItem[] = artifacts.map(art => ({
+      id: crypto.randomUUID(),
+      artifact: art,
+      args: [], // Initial empty args
+      status: 'idle'
+    }));
+    setDeploymentPlan(prev => [...prev, ...newItems]);
   };
 
-
-  const resolveArgs = (args: any[]) => {
+  const resolveArgs = (args: any[], resolvedAddresses: Record<string, string>) => {
     return args.map(arg => {
-      // If the argument is a string like "{{MyToken}}", look up its address
       if (typeof arg === 'string' && arg.startsWith('{{') && arg.endsWith('}}')) {
         const contractName = arg.replace('{{', '').replace('}}', '');
-        return sessionAddresses[contractName] || arg; // Fallback to original if not found
+        const addr = resolvedAddresses[contractName];
+        if (!addr) throw new Error(`Dependency ${contractName} not found or not deployed yet.`);
+        return addr;
       }
       return arg;
     });
   };
 
-  const runPipeline = async (orderedContracts: any[]) => {
-    const currentAddresses = { ...sessionAddresses };
+  const runPipeline = async () => {
+    setLogs(prev => [...prev, "🚀 Starting Deployment Pipeline..."]);
+    const sessionAddresses: Record<string, string> = {};
 
-    for (const contract of orderedContracts) {
-      setLogs(prev => [...prev, `Resolving dependencies for ${contract.contractName}...`]);
+    for (const item of deploymentPlan) {
+      if (item.status === 'success') continue; // Skip already deployed
 
-      // 1. Resolve Placeholders
-      const finalArgs = resolveArgs(contract.args);
-
-      // 2. Deploy
       try {
-        const result = await deploy(contract.artifact, finalArgs);
+        setLogs(prev => [...prev, `Preparing ${item.artifact.contractName}...`]);
+        
+        // Update status in UI
+        updateItemStatus(item.id, 'deploying');
 
-        // 3. Save to Session for next contracts
-        currentAddresses[contract.contractName] = result.address;
-        setSessionAddresses(currentAddresses);
+        // 1. Resolve Dependencies
+        const finalArgs = resolveArgs(item.args, sessionAddresses);
 
-        setLogs(prev => [...prev, `Deployed ${contract.contractName} at ${result.address}`]);
-      } catch (e: any) {
-        setLogs(prev => [...prev, `Pipeline stopped: ${contract.contractName} failed.`]);
-        setLogs(prev => [...prev, `Error: ${e.message || "User rejected request"}`])
-        break;
+        // 2. Deploy
+        const result = await deploy(item.artifact, finalArgs);
+
+        // 3. Record success
+        sessionAddresses[item.artifact.contractName] = result.address;
+        updateItemStatus(item.id, 'success', result.address);
+        
+        setLogs(prev => [...prev, `✅ ${item.artifact.contractName} deployed at ${result.address}`]);
+      } catch (err: any) {
+        updateItemStatus(item.id, 'error');
+        setLogs(prev => [...prev, `❌ Error deploying ${item.artifact.contractName}: ${err.message}`]);
+        break; // Stop pipeline on error
       }
     }
   };
 
-  const explorerLink = {
-    base: {
-      name: "Base",
-      url: "https://base.blockscout.com/tx/"
-    },
-    celo: {
-      name: "Celo",
-      url: "https://celo.blockscout.com/tx/"
-    }
-  }
+  const updateItemStatus = (id: string, status: PlanItem['status'], address?: string) => {
+    setDeploymentPlan(prev => prev.map(item => 
+      item.id === id ? { ...item, status, address: address || item.address } : item
+    ));
+  };
 
   return (
     <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
-      {/* Header */}
-      <Option
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
-
       <section className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Left Column: Upload & Selection */}
+        
+        {/* Left Column: Artifacts & Plan */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-gray-500 mb-4 flex items-center justify-between">
-              1. Load Project
-              <span 
-                className="text-xs text-gray-500 cursor-pointer" 
-                onClick={() => {
-                  setSelectedContract(null);
-                }}
-              >refresh</span>
-            </h2>
-            <ArtifactUploader onContractSelect={setSelectedContract} onRefresh={() => setSelectedContract(null)} />
+            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-4">1. Load Project</h2>
+            <ArtifactUploader onContractSelect={(arts: any) => handleAddContracts(Array.isArray(arts) ? arts : [arts])} />
           </div>
 
-          {selectedContract && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
-              <p className="text-xs text-blue-400 font-medium">Selected Contract</p>
-              <p className="text-lg font-mono text-white">{selectedContract.map((contract) => contract.contractName).join(', ')}</p>
-              <p className="text-xs text-gray-500 mt-1 uppercase">Framework: {selectedContract.map((contract) => contract.framework).join(', ')}</p>
-            </div>
-          )}
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase text-gray-500">Deployment Queue</h2>
+            {deploymentPlan.length === 0 && <p className="text-xs text-gray-600">Queue is empty</p>}
+            {deploymentPlan.map((item) => (
+              <div key={item.id} className={`p-3 rounded-lg border flex justify-between items-center ${item.status === 'success' ? 'border-green-900 bg-green-900/10' : 'border-gray-800 bg-gray-900'}`}>
+                <div>
+                  <p className="text-sm font-mono">{item.artifact.contractName}</p>
+                  {item.address && <p className="text-[10px] text-gray-500 truncate w-32">{item.address}</p>}
+                </div>
+                <button onClick={() => setDeploymentPlan(prev => prev.filter(i => i.id !== item.id))} className="text-gray-600 hover:text-red-500 text-xs">✕</button>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Right Column: Dynamic Action Area */}
+        {/* Right Column: Configuration */}
         <div className="lg:col-span-8">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl min-h-[500px] p-8">
-            {!selectedContract ? (
-              <div className="h-full flex flex-col items-center justify-center text-center space-y-4">
-                <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">📂</span>
-                </div>
-                <p className="text-gray-400 max-w-xs">
-                  Upload your build artifacts to begin the parameterized deployment process.
-                </p>
-              </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-8">
+            <h2 className="text-2xl font-bold mb-6">Pipeline Configuration</h2>
+            
+            {deploymentPlan.length === 0 ? (
+              <p className="text-gray-500">Add contracts from the left to configure parameters.</p>
             ) : (
-              <div>
-                <h2 className="text-2xl font-bold mb-6">Configure Action: {activeTab}</h2>
-                {/* This is where our Constructor Form will go */}
-                <div className="space-y-4">
-                  <h2 className="text-2xl font-bold mb-6">Deploy: {selectedContract.map((contract) => contract.contractName).join(', ')}</h2>
+              <div className="space-y-12">
+                {deploymentPlan.map((item) => (
+                  <div key={item.id} className="relative pl-6 border-l border-gray-800">
+                    <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-blue-500" />
+                    <h3 className="text-lg font-bold text-white mb-4">{item.artifact.contractName}</h3>
+                    
+                    <ConstructorForm
+                      artifact={item.artifact}
+                      currentArgs={item.args}
+                      availableContracts={deploymentPlan.map(p => p.artifact.contractName)}
+                      onArgsChange={(newArgs) => {
+                        setDeploymentPlan(prev => prev.map(p => p.id === item.id ? { ...p, args: newArgs } : p));
+                      }}
+                    />
+                  </div>
+                ))}
 
-                  <ConstructorForm
-                    artifact={selectedContract}
-                    onArgsChange={setConstructorArgs}
-                  />
-
-                  <button
-                    className="w-full mt-8 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all"
-                    onClick={() => handleDeploy()}
-                  >
-                    Deploy to {chain?.name} Network
-                  </button>
-                </div>
+                <button
+                  disabled={isDeploying || deploymentPlan.length === 0}
+                  onClick={runPipeline}
+                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white font-bold py-4 rounded-lg shadow-lg shadow-blue-900/20 transition-all"
+                >
+                  {isDeploying ? "Deploying Pipeline..." : `Run Sequence on ${chain?.name || 'Network'}`}
+                </button>
               </div>
             )}
           </div>
-
-          {deployedInfo && (
-            <div className="mt-6 p-6 bg-green-500/10 border border-green-500/50 rounded-xl animate-in fade-in zoom-in duration-300">
-              <h3 className="text-green-400 font-bold flex items-center gap-2">
-                <span>✅</span> Deployment Successful!
-              </h3>
-
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold">Contract Address</p>
-                  <div className="flex items-center gap-2">
-                    <code className="bg-black p-2 rounded block w-full text-sm border border-gray-800">
-                      {deployedInfo.address}
-                    </code>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(deployedInfo.address)}
-                      className="p-2 hover:bg-gray-800 rounded transition-colors"
-                      title="Copy Address"
-                    >
-                      📋
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold">Transaction Hash</p>
-                    <Link
-                      key={chain?.name == 'Base' ? explorerLink.base.name : explorerLink.celo.name}
-                      href={`${chain?.name == 'Base' ? explorerLink.base.url : explorerLink.celo.url}${deployedInfo.hash}`}
-                      target="_blank"
-                      className="text-xs text-blue-400 hover:underline font-mono"
-                    >
-                      {chain?.name == 'Base' ? explorerLink.base.name : explorerLink.celo.name} Explorer
-                    </Link>
-                </div>
-              </div>
-
-              {/* Verification Link */}
-              <button
-                onClick={() => setActiveTab('verify')}
-                className="mt-4 w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-bold transition-all"
-              >
-                Verify This Contract Now
-              </button>
-            </div>
-          )}
         </div>
       </section>
 
-      <TerminalLog logs={logs} />
-
+      <div className="max-w-6xl mx-auto mt-10">
+        <TerminalLog logs={logs} />
+      </div>
     </main>
   );
 }
