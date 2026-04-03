@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi'; // useConnection is usually for low-level, useAccount for UI
+import { useState } from 'react';
+import { useConnection } from 'wagmi'; // useConnection is usually for low-level, useConnection for UI
 import ArtifactUploader from '@/components/ArtifactUploader';
 import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
@@ -19,7 +19,7 @@ interface PlanItem {
 }
 
 export default function ParxHome() {
-  const { chain } = useAccount();
+  const { chain } = useConnection();
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
   
   // THE CORE CHANGE: A list of contracts to be deployed
@@ -96,7 +96,9 @@ export default function ParxHome() {
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6">
             <h2 className="text-sm font-semibold uppercase text-gray-500 mb-4">1. Load Project</h2>
-            <ArtifactUploader onContractSelect={(arts: any) => handleAddContracts(Array.isArray(arts) ? arts : [arts])} />
+            <ArtifactUploader 
+              onContractSelect={(arts: any) => handleAddContracts(Array.isArray(arts) ? arts : [arts])} 
+            />
           </div>
 
           <div className="space-y-2">

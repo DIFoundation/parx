@@ -5,10 +5,10 @@ import { useState } from 'react';
 
 interface Props {
     onContractSelect: (contract: SmartContractArtifact[]) => void;
-    onRefresh: () => void;
+    // onRefresh: () => void;
 }
 
-export default function ArtifactUploader({ onContractSelect, onRefresh }: Props) {
+export default function ArtifactUploader({ onContractSelect }: Props) {
     const { artifacts, parseFiles } = useArtifacts();
     const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
     const [selectedContracts, setSelectedContracts] = useState<Set<number>>(new Set());
@@ -30,7 +30,7 @@ export default function ArtifactUploader({ onContractSelect, onRefresh }: Props)
 
     const { getRootProps, getInputProps } = useDropzone({
         onDrop: (acceptedFiles) => {
-            const folderPath = acceptedFiles[0]?.path || '';
+            const folderPath = acceptedFiles[0]?.webkitRelativePath || '';
             const folderName = folderPath.split('/').slice(0, -1).pop() || 'Selected Folder';
             setSelectedFolder(folderName);
             setSelectedContracts(new Set()); // Reset selection on new folder
@@ -47,7 +47,7 @@ export default function ArtifactUploader({ onContractSelect, onRefresh }: Props)
     return (
         <div className="p-8 border-2 border-dashed border-gray-700 rounded-xl bg-gray-900 text-center cursor-pointer hover:border-blue-500 transition-all">
             <div {...getRootProps()} className="space-y-2 cursor-pointer">
-                <input {...getInputProps()} webkitdirectory="folder" directory="folder" type="file" />
+                <input {...getInputProps()} {...({ webkitdirectory: "folder", directory: "folder" } as any)} type="file" />
                 {selectedFolder ? (
                     <>
                         <p className="text-gray-400">
@@ -65,24 +65,26 @@ export default function ArtifactUploader({ onContractSelect, onRefresh }: Props)
                 )}
             </div>
 
+            <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-semibold text-blue-400">
+                    Select Contracts ({selectedContracts.size} selected)
+                </h3>
+                {selectedContracts.size > 0 && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDone();
+                        }}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
+                    >
+                        Done
+                    </button>
+                )}
+            </div>
+
             {artifacts.length > 0 && (
                 <div className="mt-4 space-y-2 max-h-100 overflow-y-auto">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-sm font-semibold text-blue-400">
-                            Select Contracts ({selectedContracts.size} selected)
-                        </h3>
-                        {selectedContracts.size > 0 && (
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDone();
-                                }}
-                                className="text-xs bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded"
-                            >
-                                Done
-                            </button>
-                        )}
-                    </div>
+
                     <ul className="space-y-1">
                         {artifacts.map((art, i) => (
                             <li
@@ -97,7 +99,7 @@ export default function ArtifactUploader({ onContractSelect, onRefresh }: Props)
                                 <input
                                     type="checkbox"
                                     checked={selectedContracts.has(i)}
-                                    onChange={() => {}}
+                                    onChange={() => { }}
                                     className="rounded border-gray-600 text-blue-600 focus:ring-blue-500"
                                     onClick={(e) => e.stopPropagation()}
                                 />
