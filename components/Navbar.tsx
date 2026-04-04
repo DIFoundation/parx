@@ -1,8 +1,8 @@
-'use client'
-import React from 'react'
-import { useAppKit } from '@reown/appkit/react';
-import { useBalance, useConnection } from 'wagmi';
-import { formatUnits } from 'viem';
+"use client"
+import React from "react";
+import { useAppKit } from "@reown/appkit/react";
+import { useBalance, useConnection } from "wagmi";
+import { formatUnits } from "viem";
 
 function ConnectWallet() {
     const { open } = useAppKit();
@@ -33,14 +33,7 @@ function ConnectWallet() {
     )
 }
 
-function CurrentNetwork() {
-    return (
-        <appkit-network-button />
-    )
-}
-
 export default function Navbar() {
-    const { isConnected, chain } = useConnection();    
     return (
         <header className="flex items-center justify-between align-middle p-4">
             <div>
@@ -51,13 +44,7 @@ export default function Navbar() {
             </div>
 
             <div className="flex items-center gap-4">
-                <ConnectWallet />
-                <CurrentNetwork />
-                {isConnected && (
-                    <div className="text-xs bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
-                        Network: <span className="text-blue-400 font-mono">{chain?.name}</span>
-                    </div>
-                )}
+                <ConnectWallet />               
             </div>
         </header>
     )
