@@ -7,7 +7,14 @@ import { SmartContractArtifact } from '@/hooks/useArtifacts';
 import ConstructorForm from '@/components/ConstructorForm';
 import { useDeployer } from '@/hooks/useDeployer';
 import TerminalLog from '@/components/TerminalLog';
-import Link from 'next/link';
+import ChainSelector from '@/components/ChainSelector';
+
+interface Chain {
+  id: number;
+  name: string;
+  symbol: string;
+  color: string;
+}
 
 // Define the structure for an item in our deployment queue
 interface PlanItem {
@@ -21,6 +28,7 @@ interface PlanItem {
 export default function ParxHome() {
   const { chain } = useConnection();
   const [activeTab, setActiveTab] = useState<'deploy' | 'verify' | 'explorer'>('deploy');
+  const [selectedChain, setSelectedChain] = useState<Chain | null>(null);
   
   // THE CORE CHANGE: A list of contracts to be deployed
   const [deploymentPlan, setDeploymentPlan] = useState<PlanItem[]>([]);
@@ -89,13 +97,27 @@ export default function ParxHome() {
   };
 
   return (
-    <main className="min-h-screen bg-black text-gray-100 p-8 font-sans">
+    <main className="min-h-screen text-gray-100 p-8 font-sans">
       <section className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
         
         {/* Left Column: Artifacts & Plan */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-6">
-            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-4">1. Load Project</h2>
+            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-4">1. Select Chain</h2>
+            <ChainSelector 
+              onChainSelect={(chain: Chain) => setSelectedChain(chain)} 
+            />
+            {selectedChain && (
+              <div className="mt-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                <p className="text-xs text-gray-400">Selected Chain:</p>
+                <p className="text-sm font-medium text-white">{selectedChain.name}</p>
+              </div>
+            )}
+
+            {/* horizontal line */}
+            <div className='w-full h-px bg-gray-700 mt-4 mb-4' />
+
+            <h2 className="text-sm font-semibold uppercase text-gray-500 mb-4">2. Load Project</h2>
             <ArtifactUploader 
               onContractSelect={(arts: any) => handleAddContracts(Array.isArray(arts) ? arts : [arts])} 
             />
@@ -119,7 +141,7 @@ export default function ParxHome() {
         {/* Right Column: Configuration */}
         <div className="lg:col-span-8">
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-8">
-            <h2 className="text-2xl font-bold mb-6">Pipeline Configuration</h2>
+            <h2 className="text-2xl font-bold mb-6">3. Pipeline Configuration</h2>
             
             {deploymentPlan.length === 0 ? (
               <p className="text-gray-500">Add contracts from the left to configure parameters.</p>
@@ -146,7 +168,7 @@ export default function ParxHome() {
                   onClick={runPipeline}
                   className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 text-white font-bold py-4 rounded-lg shadow-lg shadow-blue-900/20 transition-all"
                 >
-                  {isDeploying ? "Deploying Pipeline..." : `Run Sequence on ${chain?.name || 'Network'}`}
+                  {isDeploying ? "Deploying Pipeline..." : `4. Run Sequence on ${chain?.name || 'Network'}`}
                 </button>
               </div>
             )}
@@ -155,6 +177,7 @@ export default function ParxHome() {
       </section>
 
       <div className="max-w-6xl mx-auto mt-10">
+        <div className="text-white font-mono text-sm">Terminal</div>
         <TerminalLog logs={logs} />
       </div>
     </main>
